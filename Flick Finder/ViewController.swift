@@ -121,65 +121,163 @@ class ViewController: UIViewController, UITextFieldDelegate {
             
             //GAURD: Was there an error?
             guard (error == nil) else {
-                print("Something happened \(error)")
+                print("Something happened: \(error)")
+                return
+            }
+            
+            
+            guard let statusCode = (response as? NSHTTPURLResponse)?.statusCode where statusCode >= 200 && statusCode <= 299 else {
+                if let response = response as? NSHTTPURLResponse {
+                    print ("Your request returned an invalid response! Status code: \(response.statusCode)!")
+                } else if let response = response {
+                    print ("Your request returned an invalid response! Response: \(response)")
+                } else {
+                    print("Your request returned an invalid response!")
+                }
+                return
+            }
+            
+            guard let data = data else {
+                print("No data was returned by the request!")
                 return
             }
             
             //Parse the returned JSON into a Foundation object
             let parsedResult: AnyObject!
             do {
-                parsedResult = try NSJSONSerialization.JSONObjectWithData(data!, options: NSJSONReadingOptions.AllowFragments) as! NSDictionary
+                parsedResult = try NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.AllowFragments) as! NSDictionary
             } catch {
-                print("Couldn't parse the data")
+                parsedResult = nil
+                print("Could not parse the data as JSON: \(parsedResult)")
                 return
             }
             
-            print(parsedResult)
+            guard let stat = parsedResult["stat"] as? String where stat == "ok" else {
+                print("Flickr API returned an error. See error code and message in \(parsedResult)")
+                return
+            }
             
             //Get the photos dictionary from Foundation object; this is all the photos.
-            if let photosDictionary = parsedResult["photos"] as? [String:AnyObject] {
-                
-                //Determine the total number of photos in the photo dictionary
-                var totalPhotosVal = 0
-                if let totalPhotos = photosDictionary["total"] as? String {
-                    totalPhotosVal = (totalPhotos as NSString).integerValue
-                    print("total photos \(totalPhotosVal)")
+            guard let photosDictionary = parsedResult["photos"] as? [String:AnyObject] else {
+                print("Cannot find keys 'photos' in \(parsedResult)")
+                return
+            }
+            
+            guard let totalPages = photosDictionary["pages"] as? Int else {
+                print("Cannot find key 'pages' in \(photosDictionary)")
+                return
+            }
+            
+            let pageLimit = min(totalPages, 40)
+            let randomPage = Int(arc4random_uniform(UInt32(pageLimit))) + 1
+            self.getImageFromFlickrBySearchWithPage(methodArguments, pageNumber: randomPage)
+        }
+        
+        task.resume()
+    }
+    
+    ///Methos stuff
+    func getImageFromFlickrBySearchWithPage(methodArguments: [String : AnyObject], pageNumber: Int) {
+        
+        /* Add the page to the method arguments*/
+        var withPageDictionary = methodArguments
+        withPageDictionary["page"] = pageNumber
+        
+        let session = NSURLSession.sharedSession()
+        let urlString = baseURL + escapedParameters(withPageDictionary)
+        let url = NSURL(string: urlString)!
+        let request = NSURLRequest(URL: url)
+        
+        let task = session.dataTaskWithRequest(request) { (data, response, error) in
+            
+            /* GUARD: Was there an error? */
+            guard (error == nil) else {
+                print("There was an error with your request: \(error)")
+                return
+            }
+            
+            /* GUARD: Did we get a successful 2XX response? */
+            guard let statusCode = (response as? NSHTTPURLResponse)?.statusCode where statusCode >= 200 && statusCode <= 299 else {
+                if let response = response as? NSHTTPURLResponse {
+                    print("Your request returned an invalid response! Status code: \(response.statusCode)!")
+                } else if let response = response {
+                    print("Your request returned an invalid response! Response: \(response)!")
+                } else {
+                    print("Your request returned an invalid response!")
+                }
+                return
+            }
+            
+            /* GUARD: Was there any data returned? */
+            guard let data = data else {
+                print("No data was returned by the request!")
+                return
+            }
+            
+            /* Parse the data! */
+            let parsedResult: AnyObject!
+            do {
+                parsedResult = try NSJSONSerialization.JSONObjectWithData(data, options: .AllowFragments)
+            } catch {
+                parsedResult = nil
+                print("Could not parse the data as JSON: '\(data)'")
+                return
+            }
+            
+            /* GUARD: Did Flickr return an error (stat != ok)? */
+            guard let stat = parsedResult["stat"] as? String where stat == "ok" else {
+                print("Flickr API returned an error. See error code and message in \(parsedResult)")
+                return
+            }
+            
+            /* GUARD: Is the "photos" key in our result? */
+            guard let photosDictionary = parsedResult["photos"] as? NSDictionary else {
+                print("Cannot find key 'photos' in \(parsedResult)")
+                return
+            }
+            
+            /* GUARD: Is the "total" key in photosDictionary? */
+            guard let totalPhotosVal = (photosDictionary["total"] as? NSString)?.integerValue else {
+                print("Cannot find key 'total' in \(photosDictionary)")
+                return
+            }
+        
+            //If there have been photos returned...
+            if totalPhotosVal > 0 {
+                //...make an array of all the dictionaries that hold information about photos
+                guard let photosArray = photosDictionary["photo"] as? [[String: AnyObject]] else {
+                    print("Cannot find key 'total' in \(photosDictionary)")
+                    return
                 }
                 
-                //If there have been photos returned...
-                if totalPhotosVal > 0 {
-                    //...make an array of all the dictionaries that hold information about photos
-                    if let photosArray = photosDictionary["photo"] as? [[String:AnyObject]] {
-                        
-                        //Get a random index and pick a random photo dictionary
-                        let randomPhotoIndex = Int(arc4random_uniform(UInt32(photosArray.count)))
-                        let photoDictionary = photosArray[randomPhotoIndex] as [String: AnyObject]
-                        
-                        let imageUrl = photoDictionary["url_m"] as? String
-                        
-                        print(imageUrl)
-                        
-                        //Get the image from the URL
-                        let imageUrlAsUrl = NSURL(string: imageUrl!)
-                        let imageData = NSData(contentsOfURL: imageUrlAsUrl!)
-                        let imageToDisplay = UIImage(data: imageData!)
-                        
-                        //Get the name of the image from the url
-                        var imageTitle = photoDictionary["title"] as? String
-                        
-                        if imageTitle == "" {
-                            imageTitle = "This image has no title"
-                        }
-                        
-                        
-                        //Use the imageUrl to update the flickImageView and update the rest of the UI
-                        dispatch_async(dispatch_get_main_queue(), {() -> Void in
-                            self.instructionalText.hidden = true
-                            self.flickImageView.image = imageToDisplay
-                            self.flickLabel.text = imageTitle
-                        })
-                    }
+                //Get a random index and pick a random photo dictionary
+                let randomPhotoIndex = Int(arc4random_uniform(UInt32(photosArray.count)))
+                let photoDictionary = photosArray[randomPhotoIndex] as [String: AnyObject]
+                
+                //Get the name of the image from the url
+                var imageTitle = photoDictionary["title"] as? String
+                
+                if imageTitle == "" {
+                    imageTitle = "This image has no title"
+                }
+                
+                guard let imageUrl = photoDictionary["url_m"] as? String else {
+                    print("Cannot find key 'url_m' in \(photosDictionary)")
+                    return
+                }
+                
+                //Get the image from the URL
+                let imageUrlAsUrl = NSURL(string: imageUrl)
+                if let imageData = NSData(contentsOfURL: imageUrlAsUrl!) {
+                    
+                    //Use the imageUrl to update the flickImageView and update the rest of the UI
+                    dispatch_async(dispatch_get_main_queue(), {() -> Void in
+                        self.instructionalText.hidden = true
+                        self.flickImageView.image = UIImage(data: imageData)
+                        self.flickLabel.text = imageTitle
+                    })
                 } else {
+                    
                     dispatch_async(dispatch_get_main_queue(), {() -> Void in
                         self.instructionalText.hidden = false
                         self.flickImageView.image = nil
@@ -187,8 +285,8 @@ class ViewController: UIViewController, UITextFieldDelegate {
                     })
                 }
             }
-            
         }
+        
         task.resume()
     }
     
