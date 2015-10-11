@@ -68,6 +68,11 @@ class ViewController: UIViewController, UITextFieldDelegate {
     
     @IBAction func searchPhotosByPhraseButton(sender: UIButton) {
         
+        guard searchTermTextField.text != "" else {
+            flickLabel.text = "You must enter a search term"
+            return
+        }
+        
         //API method arguments
         let methodArguments = [
             "method" : methodName,
@@ -84,6 +89,36 @@ class ViewController: UIViewController, UITextFieldDelegate {
  
     @IBAction func searchPhotosByLatLonButton(sender: UIButton) {
         
+        /* GUARD: Do both the search fields have values in them? */
+        guard (!latTextField.text!.isEmpty || !longTextField.text!.isEmpty) else {
+            flickLabel.text = "Enter a valid lat/long value.\nLat -90,90 and long -180,180"
+            return
+        }
+        
+        /* GUARD: Does the lat field have a vaule in it? */
+        guard !latTextField.text!.isEmpty else {
+            flickLabel.text = "Enter a valid lat value"
+            return
+        }
+        
+        /* GUARD: Does the long field have a value in it? */
+        guard !longTextField.text!.isEmpty else {
+            flickLabel.text = "Enter a valid long value"
+            return
+        }
+        
+        /* GUARD: Does the lat field have a valid value in it? */
+        guard validateLatitude() else {
+            flickLabel.text = "Enter a valid latitude; -90,90"
+            return
+        }
+        
+        /* GUARD: Does the long field have a valid value in it? */
+        guard validateLongitude() else {
+            flickLabel.text = "Enter a valid longitude; -180.180"
+            return
+        }
+    
         //API method arguments
         let methodArguments = [
             "method" : methodName,
@@ -102,6 +137,30 @@ class ViewController: UIViewController, UITextFieldDelegate {
     
     //MARK: Functions
     
+    ///Function to validate latitude
+    func validateLatitude() -> Bool {
+        if let latitude : Double? = Double(latTextField.text!) {
+            if latitude < latMin || latitude > latMax {
+                return false
+            }
+        } else {
+            return false
+        }
+        return true
+    }
+    
+    ///Function to validate longitude
+    func validateLongitude() -> Bool {
+        if let longitude : Double? = Double(longTextField.text!) {
+            if longitude < lonMin || longitude > lonMax {
+                return false
+            }
+        } else {
+            return false
+        }
+        return true
+    }
+    
     ///Function retrives a image from Flickr
     func getImageFromFlickr(methodArguments: [String: AnyObject]) {
         
@@ -119,13 +178,13 @@ class ViewController: UIViewController, UITextFieldDelegate {
             /* COMPLETION BLOCK */
             /* Check for a successful response */
             
-            //GAURD: Was there an error?
+            /* GUARD: Was there an error? */
             guard (error == nil) else {
                 print("Something happened: \(error)")
                 return
             }
             
-            
+            /* GUARD: Did we get a successful 2XX response? */
             guard let statusCode = (response as? NSHTTPURLResponse)?.statusCode where statusCode >= 200 && statusCode <= 299 else {
                 if let response = response as? NSHTTPURLResponse {
                     print ("Your request returned an invalid response! Status code: \(response.statusCode)!")
@@ -137,6 +196,7 @@ class ViewController: UIViewController, UITextFieldDelegate {
                 return
             }
             
+            /* GUARD: Was there any data returned? */
             guard let data = data else {
                 print("No data was returned by the request!")
                 return
@@ -152,17 +212,19 @@ class ViewController: UIViewController, UITextFieldDelegate {
                 return
             }
             
+            /* GUARD: Did Flickr return an error (stat != ok)? */
             guard let stat = parsedResult["stat"] as? String where stat == "ok" else {
                 print("Flickr API returned an error. See error code and message in \(parsedResult)")
                 return
             }
             
-            //Get the photos dictionary from Foundation object; this is all the photos.
+            /* GUARD: Is the "photos" key in our result? */
             guard let photosDictionary = parsedResult["photos"] as? [String:AnyObject] else {
                 print("Cannot find keys 'photos' in \(parsedResult)")
                 return
             }
             
+            /* GUARD: Is the "pages" key in photosDictionary? */
             guard let totalPages = photosDictionary["pages"] as? Int else {
                 print("Cannot find key 'pages' in \(photosDictionary)")
                 return
@@ -176,7 +238,7 @@ class ViewController: UIViewController, UITextFieldDelegate {
         task.resume()
     }
     
-    ///Methos stuff
+    ///Method retrives a image from Flickr from a random page
     func getImageFromFlickrBySearchWithPage(methodArguments: [String : AnyObject], pageNumber: Int) {
         
         /* Add the page to the method arguments*/
